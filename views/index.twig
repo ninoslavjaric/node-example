@@ -1,0 +1,209 @@
+{% extends 'layout.twig' %}
+
+{% block body %}
+
+    <div class="container">
+        <div class="row">
+            <div class="col-sm-12">
+                <h1 class="text-center">{{ title }}</h1>
+            </div>
+        </div>
+        <div class="row justify-content-sm-center">
+            <div class="col-sm-8 col-sm-offset-2">
+                <table class="tabela">
+                    <thead>
+                    <tr>
+                        <th>DATE</th>
+                        <th>CPU</th>
+                        <th>MEM</th>
+                        <th>Option</th>
+                    </tr>
+                    </thead>
+                    <tbody></tbody>
+                    <tfoot>
+                    <tr>
+                        <th>DATE</th>
+                        <th>CPU</th>
+                        <th>MEM</th>
+                        <th>Option</th>
+                    </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal" tabindex="-1" role="dialog">
+        <div class="modal-dialog modal-lg" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Logs</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <h4>Processes</h4>
+                    <table id="processes">
+                        <thead>
+                        <tr>
+                            <th>USER</th>
+                            <th>PID</th>
+                            <th>%CPU</th>
+                            <th>%MEM</th>
+                            <th>VSZ</th>
+                            <th>RSS</th>
+                            <th>TTY</th>
+                            <th>STAT</th>
+                            <th>START</th>
+                            <th>TIME</th>
+                            <th>COMMAND</th>
+                        </tr>
+                        </thead>
+                        <tbody></tbody>
+                        <tfoot>
+                        <tr>
+                            <th>USER</th>
+                            <th>PID</th>
+                            <th>%CPU</th>
+                            <th>%MEM</th>
+                            <th>VSZ</th>
+                            <th>RSS</th>
+                            <th>TTY</th>
+                            <th>STAT</th>
+                            <th>START</th>
+                            <th>TIME</th>
+                            <th>COMMAND</th>
+                        </tr>
+                        </tfoot>
+                    </table>
+                    <h4>Queries</h4>
+                    <table id="queries">
+                        <thead>
+                        <tr>
+                            <th>Id</th>
+                            <th>User</th>
+                            <th>Host</th>
+                            <th>Db</th>
+                            <th>Command</th>
+                            <th>Time</th>
+                            <th>State</th>
+                            <th>Info</th>
+                        </tr>
+                        </thead>
+                        <tbody></tbody>
+                        <tfoot>
+                        <tr>
+                            <th>Id</th>
+                            <th>User</th>
+                            <th>Host</th>
+                            <th>Db</th>
+                            <th>Command</th>
+                            <th>Time</th>
+                            <th>State</th>
+                            <th>Info</th>
+                        </tr>
+                        </tfoot>
+                    </table>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary">Save changes</button>
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let queries = [];
+        let processes = [];
+
+        let queriesTable = $('#queries').DataTable({
+            data: queries,
+            columns: [
+                {data: 'Id'},
+                {data: 'User'},
+                {data: 'Host'},
+                {data: 'db'},
+                {data: 'Command'},
+                {data: 'Time'},
+                {data: 'State'},
+                {data: 'Info'},
+            ]
+        });
+        let processesTable = $('#processes').DataTable({
+            data: processes,
+            columns: [
+                {data: 'USER'},
+                {data: 'PID'},
+                {data: '%CPU'},
+                {data: '%MEM'},
+                {data: 'VSZ'},
+                {data: 'RSS'},
+                {data: 'TTY'},
+                {data: 'STAT'},
+                {data: 'START'},
+                {data: 'TIME'},
+                {data: 'COMMAND'},
+            ]
+        });
+
+        const preview = element => {
+            fetch(element.getAttribute('data-stamp')).then(response => response.json()).then(data => {
+                queriesTable.clear();
+                queriesTable.rows.add(data.mysqlProcesses);
+                queriesTable.draw();
+
+                processesTable.clear();
+                processesTable.rows.add(data.processes.processes);
+                processesTable.draw();
+                $('.modal').modal('show')
+            })
+        };
+        (() => {
+            let data = [];
+            let tablePaging = 0;
+            let table = $('.tabela').DataTable({
+                order: [[0, 'desc']],
+                data: data,
+                columns: [
+                    {"data": null, render: dataItem => {
+                            return moment.unix(dataItem.id).format( 'Y-MM-DD HH:mm:ss' );
+                    }, bSortable: false},
+                    {"data": "cpu", bSortable: false},
+                    {"data": "memory", bSortable: false},
+                    {"data": null, render: dataItem => {
+                            return `<button onclick="preview(this)" class="btn btn-primary" data-stamp="/get-process/${dataItem.id}">Show processes</button>`;
+                    }, bSortable: false}
+                ]
+            });
+            table.on( 'page.dt', event => {
+                tablePaging = $(event.target).DataTable().page.info().page;
+            });
+
+            fetch('/?json=1').then(response => response.json()).then(arrays => {
+                data = arrays.data;
+                table.clear();
+                table.rows.add(data);
+                table.draw();
+
+
+                let socket = new WebSocket(`ws://${location.hostname}:8889`);
+
+                socket.addEventListener('message', function (event) {
+                    let item = JSON.parse(event.data);
+                    data.push({
+                        id: item.id,
+                        cpu: item.processes.cpuTotal,
+                        memory: item.processes.memoryTotal,
+                    });
+
+                    table.clear();
+                    table.rows.add(data);
+                    table.draw();
+                    table.page(tablePaging).draw('page').draw('page');
+                });
+            });
+        })();
+    </script>
+{% endblock %}
